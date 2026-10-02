@@ -27,7 +27,7 @@ final class PollerTests: XCTestCase {
     fileprivate func at(_ seconds: TimeInterval) { clock = t0.addingTimeInterval(seconds) }
 
     fileprivate func run(_ id: Int, _ status: String, _ conclusion: String?, repo: String = "me/a",
-                     updated: TimeInterval = 0) -> Run {
+                         updated: TimeInterval = 0) -> Run {
         Run.fixture(id: id, repo: repo, status: status, conclusion: conclusion,
                     created: t0.addingTimeInterval(-120), updated: t0.addingTimeInterval(updated))
     }
