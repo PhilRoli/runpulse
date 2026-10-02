@@ -18,11 +18,11 @@ struct RunTracker {
     }
 
     var running: [Run] {
-        runs.values.filter { !$0.state.isCompleted }.sorted { $0.createdAt > $1.createdAt }
+        runs.values.filter { !$0.state.isCompleted }.sorted { ($0.createdAt, $0.id) > ($1.createdAt, $1.id) }
     }
 
     var recent: [Run] {
-        Array(runs.values.filter { $0.state.isCompleted }.sorted { $0.updatedAt > $1.updatedAt }
+        Array(runs.values.filter { $0.state.isCompleted }.sorted { ($0.updatedAt, $0.id) > ($1.updatedAt, $1.id) }
             .prefix(Self.recentLimit))
     }
 
@@ -60,7 +60,7 @@ struct RunTracker {
         }
         let pageIDs = Set(relevant.map(\.id))
         runs = runs.filter { $0.value.repo != repo || pageIDs.contains($0.value.id) }
-        return events.sorted { $0.run.updatedAt < $1.run.updatedAt }
+        return events.sorted { ($0.run.updatedAt, $0.run.id) < ($1.run.updatedAt, $1.run.id) }
     }
 
     private mutating func remember(_ key: String) {

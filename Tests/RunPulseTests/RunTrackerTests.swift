@@ -94,4 +94,15 @@ final class RunTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.merge(repo: "me/app", runs: runs).count, 501)
         XCTAssertEqual(tracker.notifiedCount, RunTracker.notifiedLimit)
     }
+
+    func testEqualTimestampsOrderDeterministicallyByID() {
+        var tracker = RunTracker(baselineAt: t0)
+        let ids = Array(1...12)
+        let events = tracker.merge(repo: "me/app", runs: ids.map { run($0, created: 5, updated: 30) })
+        XCTAssertEqual(events.map(\.run.id), ids)
+        XCTAssertEqual(tracker.recent.map(\.id), Array(ids.reversed().prefix(RunTracker.recentLimit)))
+        var live = RunTracker(baselineAt: t0)
+        _ = live.merge(repo: "me/app", runs: ids.map { run($0, "in_progress", nil, created: 5, updated: 5) })
+        XCTAssertEqual(live.running.map(\.id), ids.reversed())
+    }
 }
