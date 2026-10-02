@@ -65,3 +65,63 @@ enum JSONFixtures {
     {"total_count":1,"jobs":[{"name":"release","status":"completed","conclusion":"success","steps":[]}]}
     """
 }
+
+final class FakeGitHub: GitHubFetching, @unchecked Sendable {
+    var login: Result<String, GitHubError> = .success("me")
+    var repos: Result<[Repo], GitHubError> = .success([])
+    var runs: [String: Result<[Run], GitHubError>] = [:]
+    var steps: [Int: FailedStep] = [:]
+    var unauthorizedTokens: Set<String> = []
+    private(set) var calls: [String] = []
+
+    func viewer(token: String) async throws -> String {
+        calls.append("viewer")
+        try check(token)
+        return try login.get()
+    }
+
+    func recentRepos(token: String) async throws -> [Repo] {
+        calls.append("repos")
+        try check(token)
+        return try repos.get()
+    }
+
+    func runs(repo: String, actor: String, token: String) async throws -> [Run] {
+        calls.append("runs \(repo)")
+        try check(token)
+        return try (runs[repo] ?? .success([])).get()
+    }
+
+    func failedStep(repo: String, runID: Int, token: String) async throws -> FailedStep? {
+        calls.append("jobs \(runID)")
+        return steps[runID]
+    }
+
+    func resetCalls() { calls = [] }
+
+    private func check(_ token: String) throws {
+        if unauthorizedTokens.contains(token) { throw GitHubError.unauthorized }
+    }
+}
+
+/// Returns `next` values in order on each fresh read (the last one repeats); caches like the real provider.
+final class FakeTokens: TokenProviding, @unchecked Sendable {
+    var next: [Token?] = [Token(value: "tok", source: .gh)]
+    private var current: Token?
+    private(set) var reads = 0
+    private(set) var invalidations = 0
+
+    func token() throws -> Token {
+        if let current { return current }
+        reads += 1
+        let value = next.count > 1 ? next.removeFirst() : (next.first ?? nil)
+        guard let value else { throw TokenError.missing }
+        current = value
+        return value
+    }
+
+    func invalidate() {
+        invalidations += 1
+        current = nil
+    }
+}
