@@ -60,6 +60,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// Menus run the event loop in `.eventTracking` mode, so the ticker must be scheduled in `.common`.
     func menuWillOpen(_ menu: NSMenu) {
         onMenuOpened?()
+        ticker?.invalidate()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
