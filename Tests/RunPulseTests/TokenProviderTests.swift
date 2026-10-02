@@ -79,4 +79,10 @@ final class TokenProviderTests: XCTestCase {
         XCTAssertNil(SystemProcessRunner().run("/nonexistent/gh", ["auth", "token"]))
         XCTAssertEqual(SystemProcessRunner().run("/bin/echo", ["hi"])?.output, "hi\n")
     }
+
+    func testSystemRunnerTimesOutHangingProcess() {
+        let start = Date()
+        XCTAssertNil(SystemProcessRunner(timeout: 0.5).run("/bin/sleep", ["5"]))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+    }
 }
