@@ -31,7 +31,10 @@ struct StatusTitle: Equatable {
         } else {
             title = StatusTitle(text: "", tint: .normal)
         }
-        if input.status == .stale { title.text += "*" }
+        switch input.status {
+        case .stale, .rateLimited, .unreachable: title.text += "*"
+        default: break
+        }
         return title
     }
 }

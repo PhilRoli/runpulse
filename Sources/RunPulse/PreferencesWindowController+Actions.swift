@@ -41,9 +41,8 @@ extension PreferencesWindowController {
     }
 
     @objc func repoToggled(_ sender: NSButton) {
-        guard repoRows.indices.contains(sender.tag) else { return }
-        config.muted = PreferencesLogic.muted(config.muted, repo: repoRows[sender.tag].name,
-                                              enabled: sender.state == .on)
+        guard let name = sender.identifier?.rawValue, repoRows.contains(where: { $0.name == name }) else { return }
+        config.muted = PreferencesLogic.muted(config.muted, repo: name, enabled: sender.state == .on)
         onChange?(config)
         reloadRepos()
     }
