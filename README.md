@@ -19,13 +19,13 @@ xattr -dr com.apple.quarantine /Applications/RunPulse.app
 
 ## Sign-in
 
-RunPulse uses the GitHub CLI's login: install [`gh`](https://cli.github.com) and run `gh auth login` (scopes `repo`, `read:org`). Without `gh`, paste a personal access token in Preferences — it's stored in the login Keychain via `/usr/bin/security`.
+RunPulse uses the GitHub CLI's login: install [`gh`](https://cli.github.com) and run `gh auth login` (scopes `repo`, `read:org`). Without `gh`, paste a personal access token in Preferences — it's stored in the login Keychain via `/usr/bin/security`. Fine-grained tokens need Actions: Read and Metadata: Read.
 
 ## How it works
 
-- Repos: every repo you can push to that was pushed in the last 7 days (1/3/7/14 in Preferences); uncheck repos to mute them.
+- Repos: every repo you own, collaborate on or can see through an organisation that was pushed in the last 7 days (1/3/7/14 in Preferences); uncheck repos to mute them.
 - Runs: `GET /repos/{repo}/actions/runs?actor=<you>`, every 10 s while something is running, otherwise every 60 s, with ETags so unchanged polls don't count against the rate limit. Pull-request and scheduled runs are ignored.
-- Menu bar: icon only when idle, the number of running runs, a green ✓ for 5 minutes after a pass, a red ✗ after a failure until you open the menu, an orange `!` when signed out.
+- Menu bar: icon only when idle, the number of running runs, a green ✓ for 5 minutes after a pass, a red ✗ after a failure until you open the menu, an orange `!` when signed out. A trailing `*` marks stale data (GitHub unreachable or rate-limited).
 
 ## Development
 
