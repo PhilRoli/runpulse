@@ -72,7 +72,9 @@ final class FakeGitHub: GitHubFetching, @unchecked Sendable {
     var runs: [String: Result<[Run], GitHubError>] = [:]
     var steps: [Int: FailedStep] = [:]
     var unauthorizedTokens: Set<String> = []
+    var singleRuns: [Int: Result<Run, GitHubError>] = [:]
     var beforeViewer: (() async -> Void)?
+    var beforeRuns: (() async -> Void)?
     private(set) var calls: [String] = []
 
     func viewer(token: String) async throws -> String {
@@ -92,7 +94,16 @@ final class FakeGitHub: GitHubFetching, @unchecked Sendable {
     func runs(repo: String, actor: String, token: String) async throws -> [Run] {
         calls.append("runs \(repo)")
         try check(token)
-        return try (runs[repo] ?? .success([])).get()
+        let result = runs[repo] ?? .success([])
+        await beforeRuns?()
+        return try result.get()
+    }
+
+    func run(repo: String, id: Int, token: String) async throws -> Run {
+        calls.append("run \(id)")
+        try check(token)
+        guard let result = singleRuns[id] else { throw GitHubError.noAccess }
+        return try result.get()
     }
 
     func failedStep(repo: String, runID: Int, token: String) async throws -> FailedStep? {

@@ -3,12 +3,12 @@ import XCTest
 
 @MainActor
 final class PollerTests: XCTestCase {
-    fileprivate let t0 = Date(timeIntervalSince1970: 1_800_000_000)
-    fileprivate var clock = Date(timeIntervalSince1970: 1_800_000_000)
-    fileprivate var github: FakeGitHub!
-    fileprivate var tokens: FakeTokens!
-    fileprivate var config = AppConfig()
-    fileprivate var finished: [([FinishedEvent], [String: FailedStep])] = []
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    var clock = Date(timeIntervalSince1970: 1_800_000_000)
+    var github: FakeGitHub!
+    var tokens: FakeTokens!
+    var config = AppConfig()
+    var finished: [([FinishedEvent], [String: FailedStep])] = []
 
     override func setUp() async throws {
         clock = t0
@@ -18,16 +18,16 @@ final class PollerTests: XCTestCase {
         finished = []
     }
 
-    fileprivate func makePoller() -> Poller {
+    func makePoller() -> Poller {
         let poller = Poller(client: github, tokens: tokens, config: config, now: { [unowned self] in self.clock })
         poller.onFinished = { [unowned self] events, details in self.finished.append((events, details)) }
         return poller
     }
 
-    fileprivate func at(_ seconds: TimeInterval) { clock = t0.addingTimeInterval(seconds) }
+    func at(_ seconds: TimeInterval) { clock = t0.addingTimeInterval(seconds) }
 
-    fileprivate func run(_ id: Int, _ status: String, _ conclusion: String?, repo: String = "me/a",
-                         updated: TimeInterval = 0) -> Run {
+    func run(_ id: Int, _ status: String, _ conclusion: String?, repo: String = "me/a",
+             updated: TimeInterval = 0) -> Run {
         Run.fixture(id: id, repo: repo, status: status, conclusion: conclusion,
                     created: t0.addingTimeInterval(-120), updated: t0.addingTimeInterval(updated))
     }
@@ -295,7 +295,7 @@ extension PollerTests {
     }
 }
 
-private final class Gate: @unchecked Sendable {
+final class Gate: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Never>?
     private var opened = false

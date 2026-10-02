@@ -1,6 +1,13 @@
 import XCTest
 @testable import RunPulse
 
+private extension RunTracker {
+    /// Most tests merge "at baseline"; the first-merge window then equals the baseline itself.
+    mutating func merge(repo: String, runs: [Run]) -> [FinishedEvent] {
+        merge(repo: repo, runs: runs, now: baselineAt)
+    }
+}
+
 final class RunTrackerTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
@@ -104,5 +111,57 @@ final class RunTrackerTests: XCTestCase {
         var live = RunTracker(baselineAt: t0)
         _ = live.merge(repo: "me/app", runs: ids.map { run($0, "in_progress", nil, created: 5, updated: 5) })
         XCTAssertEqual(live.running.map(\.id), ids.reversed())
+    }
+
+    // MARK: Final review fixes
+
+    func testNewRepoLateIntoPollingIsSilentForOldRuns() {
+        var tracker = RunTracker(baselineAt: t0)
+        let now = t0.addingTimeInterval(3 * 3_600)
+        let old = run(1, updated: 3_600) // finished 2 h ago, after launch
+        XCTAssertEqual(tracker.merge(repo: "me/new", runs: [old], now: now), [])
+        let fresh = run(2, updated: 3 * 3_600 - 120)
+        XCTAssertEqual(tracker.merge(repo: "me/other", runs: [fresh], now: now), [FinishedEvent(run: fresh)])
+    }
+
+    func testSeenRepoUsesBaselineAgainAndRemoveResetsIt() {
+        var tracker = RunTracker(baselineAt: t0)
+        let now = t0.addingTimeInterval(3 * 3_600)
+        _ = tracker.merge(repo: "me/app", runs: [], now: now)
+        let mid = run(1, updated: 3_600)
+        XCTAssertEqual(tracker.merge(repo: "me/app", runs: [mid], now: now), [FinishedEvent(run: mid)])
+        tracker.remove(repo: "me/app")
+        XCTAssertEqual(tracker.merge(repo: "me/app", runs: [run(3, updated: 3_600)], now: now), [])
+    }
+
+    func testRebaselineNeverMovesEarlier() {
+        var tracker = RunTracker(baselineAt: t0)
+        tracker.rebaseline(at: t0.addingTimeInterval(-600))
+        XCTAssertEqual(tracker.baselineAt, t0)
+        tracker.rebaseline(at: t0.addingTimeInterval(600))
+        XCTAssertEqual(tracker.baselineAt, t0.addingTimeInterval(600))
+    }
+
+    func testInFlightRunMissingFromPageIsKept() {
+        var tracker = RunTracker(baselineAt: t0)
+        let live = run(1, "in_progress", nil, created: -300, updated: -10)
+        _ = tracker.merge(repo: "me/app", runs: [live, run(2, updated: -20)])
+        XCTAssertEqual(tracker.unfinishedRuns(missingFrom: [run(3, updated: -5)], repo: "me/app").map(\.id), [1])
+        _ = tracker.merge(repo: "me/app", runs: [run(3, updated: -5)])
+        XCTAssertEqual(tracker.running.map(\.id), [1])
+        XCTAssertEqual(tracker.recent.map(\.id), [3])
+    }
+
+    func testMergeSingleNotifiesOnceAndRemoveRunID() {
+        var tracker = RunTracker(baselineAt: t0)
+        _ = tracker.merge(repo: "me/app", runs: [run(1, "in_progress", nil, created: -300)])
+        let done = run(1, "completed", "success", created: -300, updated: 20)
+        XCTAssertEqual(tracker.mergeSingle(done, now: t0), [FinishedEvent(run: done)])
+        XCTAssertEqual(tracker.mergeSingle(done, now: t0), [])
+        XCTAssertEqual(tracker.mergeSingle(run(5, event: "schedule", updated: 10), now: t0), [])
+        XCTAssertEqual(tracker.recent.map(\.id), [1])
+        _ = tracker.merge(repo: "me/app", runs: [run(9, "queued", nil)])
+        tracker.remove(runID: 9)
+        XCTAssertEqual(tracker.running, [])
     }
 }
