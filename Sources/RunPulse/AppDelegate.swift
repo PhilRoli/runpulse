@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSuccessAt: Date?
     private var failureUnacknowledged = false
     private var wakeObserver: NSObjectProtocol?
+    private var prefs: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.make()
@@ -29,7 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.failureUnacknowledged = false
             self.render()
         }
-        poller.onUpdate = { [unowned self] _ in self.render() }
+        poller.onUpdate = { [unowned self] state in
+            self.render()
+            self.prefs?.update(state: state)
+        }
         poller.onFinished = { [unowned self] events, details in self.handle(events, details) }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -63,6 +67,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showPreferences() {
-        // Implemented in Task 10.
+        if prefs == nil {
+            let controller = PreferencesWindowController(config: config, keychain: keychain,
+                                                         loginItem: LoginItemController())
+            controller.onChange = { [unowned self] newConfig in
+                self.config = newConfig
+                self.store.save(newConfig)
+                self.poller.apply(newConfig)
+            }
+            controller.onTokenSaved = { [unowned self] in self.poller.tokenChanged() }
+            prefs = controller
+        }
+        prefs?.update(state: poller.state)
+        prefs?.show()
     }
 }
