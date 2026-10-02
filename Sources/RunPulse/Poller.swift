@@ -40,6 +40,9 @@ final class Poller {
     private var lastAuthAttempt: Date?
     private var failureCount = 0
     private var isTicking = false
+    private var pendingForce = false
+    private var tokenGeneration = 0
+    private var activeGeneration = 0
     private var loop: Task<Void, Never>?
 
     private(set) var state = PollerState()
@@ -78,6 +81,7 @@ final class Poller {
 
     func tokenChanged() {
         tokens.invalidate()
+        tokenGeneration += 1
         login = nil
         state.account = nil
         lastAuthAttempt = nil
@@ -95,21 +99,34 @@ final class Poller {
     }
 
     func tick(force: Bool = false) async {
-        guard !isTicking else { return }
-        isTicking = true
-        defer {
-            isTicking = false
-            publish()
+        guard !isTicking else {
+            if force { pendingForce = true }
+            return
         }
+        isTicking = true
+        defer { isTicking = false }
+        var next: Bool? = force
+        while let forced = next {
+            pendingForce = false
+            await performTick(force: forced)
+            next = pendingForce ? true : nil
+        }
+    }
+
+    private func performTick(force: Bool) async {
+        defer { publish() }
         let at = now()
-        guard force || isAllowed(at) else { return }
+        activeGeneration = tokenGeneration
+        guard isAllowed(at, force: force) else { return }
         guard let token = await readToken() else {
+            guard isCurrent else { return }
             lastAuthAttempt = at
             state.status = .authMissing
             return
         }
         do {
             let used = try await cycleRetryingAuth(token, at: at, force: force)
+            try ensureCurrent()
             state.tokenSource = used.source
             failureCount = 0
             pausedUntil = nil
@@ -118,14 +135,23 @@ final class Poller {
         } catch is CancellationError {
             return
         } catch {
+            guard isCurrent else { return }
             fail(error as? GitHubError ?? .unreachable, at: at)
         }
     }
 
     // MARK: Cycle
 
-    private func isAllowed(_ at: Date) -> Bool {
+    private var isCurrent: Bool { tokenGeneration == activeGeneration }
+
+    /// A token change mid-flight invalidates the cycle like a cancellation.
+    private func ensureCurrent() throws {
+        if !isCurrent { throw CancellationError() }
+    }
+
+    private func isAllowed(_ at: Date, force: Bool) -> Bool {
         if let pausedUntil, at < pausedUntil { return false }
+        if force { return true }
         if state.status == .authMissing || state.status == .authFailed, let last = lastAuthAttempt {
             return at.timeIntervalSince(last) >= Self.idleInterval
         }
@@ -139,20 +165,27 @@ final class Poller {
             return token
         } catch GitHubError.unauthorized {
             tokens.invalidate()
-            guard let fresh = await readToken(), fresh.value != token.value else { throw GitHubError.unauthorized }
+            let reread = await readToken()
+            try ensureCurrent()
+            guard let fresh = reread, fresh.value != token.value else { throw GitHubError.unauthorized }
             try await cycle(token: fresh.value, at: at, force: true)
             return fresh
         }
     }
 
     private func cycle(token: String, at: Date, force: Bool) async throws {
+        defer { if isCurrent { refreshLists(at: at) } }
         if login == nil {
-            login = try await client.viewer(token: token)
-            state.account = login
+            let fetched = try await client.viewer(token: token)
+            try ensureCurrent()
+            login = fetched
+            state.account = fetched
         }
         guard let login else { return }
         if force || isDue(lastRepoFetch, Self.idleInterval, at) {
-            repos = try await client.recentRepos(token: token)
+            let fetched = try await client.recentRepos(token: token)
+            try ensureCurrent()
+            repos = fetched
             lastRepoFetch = at
         }
         for repo in activeRepos(at: at) {
@@ -160,17 +193,19 @@ final class Poller {
             guard force || isDue(lastRunFetch[repo], interval, at) else { continue }
             do {
                 let runs = try await client.runs(repo: repo, actor: login, token: token)
+                try ensureCurrent()
                 lastRunFetch[repo] = at
                 state.noAccess.remove(repo)
-                await report(tracker.merge(repo: repo, runs: runs), repo: repo, token: token)
+                try await report(tracker.merge(repo: repo, runs: runs), repo: repo, token: token)
             } catch GitHubError.noAccess {
                 cooldown[repo] = at.addingTimeInterval(Self.noAccessCooldown)
                 state.noAccess.insert(repo)
+                lastRunFetch[repo] = at
+                tracker.remove(repo: repo)
             } catch GitHubError.http(_), GitHubError.decoding {
                 lastRunFetch[repo] = at // one broken repo must not stale the rest
             }
         }
-        refreshLists(at: at)
     }
 
     private func fail(_ error: GitHubError, at: Date) {
@@ -220,7 +255,7 @@ final class Poller {
         state.failures = state.failures.filter { keys.contains($0.key) }
     }
 
-    private func report(_ events: [FinishedEvent], repo: String, token: String) async {
+    private func report(_ events: [FinishedEvent], repo: String, token: String) async throws {
         guard !events.isEmpty else { return }
         var details: [String: FailedStep] = [:]
         for event in events where event.run.state == .failure {
@@ -228,6 +263,7 @@ final class Poller {
                 details[event.run.key] = step
             }
         }
+        try ensureCurrent()
         state.failures.merge(details) { $1 }
         onFinished?(events, details)
     }

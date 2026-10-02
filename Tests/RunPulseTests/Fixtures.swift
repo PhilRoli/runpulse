@@ -72,12 +72,15 @@ final class FakeGitHub: GitHubFetching, @unchecked Sendable {
     var runs: [String: Result<[Run], GitHubError>] = [:]
     var steps: [Int: FailedStep] = [:]
     var unauthorizedTokens: Set<String> = []
+    var beforeViewer: (() async -> Void)?
     private(set) var calls: [String] = []
 
     func viewer(token: String) async throws -> String {
         calls.append("viewer")
         try check(token)
-        return try login.get()
+        let result = login
+        await beforeViewer?()
+        return try result.get()
     }
 
     func recentRepos(token: String) async throws -> [Repo] {

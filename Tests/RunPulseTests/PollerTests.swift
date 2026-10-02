@@ -3,12 +3,12 @@ import XCTest
 
 @MainActor
 final class PollerTests: XCTestCase {
-    private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
-    private var clock = Date(timeIntervalSince1970: 1_800_000_000)
-    private var github: FakeGitHub!
-    private var tokens: FakeTokens!
-    private var config = AppConfig()
-    private var finished: [([FinishedEvent], [String: FailedStep])] = []
+    fileprivate let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    fileprivate var clock = Date(timeIntervalSince1970: 1_800_000_000)
+    fileprivate var github: FakeGitHub!
+    fileprivate var tokens: FakeTokens!
+    fileprivate var config = AppConfig()
+    fileprivate var finished: [([FinishedEvent], [String: FailedStep])] = []
 
     override func setUp() async throws {
         clock = t0
@@ -18,15 +18,15 @@ final class PollerTests: XCTestCase {
         finished = []
     }
 
-    private func makePoller() -> Poller {
+    fileprivate func makePoller() -> Poller {
         let poller = Poller(client: github, tokens: tokens, config: config, now: { [unowned self] in self.clock })
         poller.onFinished = { [unowned self] events, details in self.finished.append((events, details)) }
         return poller
     }
 
-    private func at(_ seconds: TimeInterval) { clock = t0.addingTimeInterval(seconds) }
+    fileprivate func at(_ seconds: TimeInterval) { clock = t0.addingTimeInterval(seconds) }
 
-    private func run(_ id: Int, _ status: String, _ conclusion: String?, repo: String = "me/a",
+    fileprivate func run(_ id: Int, _ status: String, _ conclusion: String?, repo: String = "me/a",
                      updated: TimeInterval = 0) -> Run {
         Run.fixture(id: id, repo: repo, status: status, conclusion: conclusion,
                     created: t0.addingTimeInterval(-120), updated: t0.addingTimeInterval(updated))
@@ -225,5 +225,102 @@ final class PollerTests: XCTestCase {
         at(1); await poller.tick(force: true)
         XCTAssertEqual(github.calls.first, "viewer")
         XCTAssertEqual(poller.state.account, "other")
+    }
+}
+
+extension PollerTests {
+    // MARK: Fix round 1
+
+    func testTokenChangeMidFlightDoesNotKeepOldAccount() async {
+        let gate = Gate()
+        github.beforeViewer = { await gate.wait() }
+        let poller = makePoller()
+        var accounts: [String?] = []
+        poller.onUpdate = { accounts.append($0.account) }
+        let inFlight = Task { await poller.tick() }
+        while !gate.isWaiting { await Task.yield() }
+        poller.tokenChanged()
+        github.login = .success("other")
+        gate.open()
+        await inFlight.value
+        XCTAssertFalse(accounts.contains("me"))
+        XCTAssertEqual(poller.state.account, "other")
+        XCTAssertEqual(github.calls.filter { $0 == "viewer" }.count, 2)
+    }
+
+    func testAbortedCycleStillPublishesMergedRepos() async {
+        github.repos = .success([.fixture("me/a", pushedAt: t0), .fixture("me/b", pushedAt: t0)])
+        github.runs["me/a"] = .success([run(1, "completed", "success", updated: -10)])
+        github.runs["me/b"] = .failure(.unreachable)
+        let poller = makePoller()
+        await poller.tick()
+        XCTAssertEqual(poller.state.recent.map(\.id), [1])
+    }
+
+    func testForcedTickHonoursRateLimitPause() async {
+        github.repos = .failure(.rateLimited(until: t0.addingTimeInterval(120)))
+        let poller = makePoller()
+        await poller.tick()
+        github.resetCalls()
+        at(60); await poller.tick(force: true)
+        XCTAssertEqual(github.calls, [])
+    }
+
+    func testForcedRefreshDuringInFlightTickIsNotLost() async {
+        let gate = Gate()
+        github.beforeViewer = { await gate.wait() }
+        let poller = makePoller()
+        let inFlight = Task { await poller.tick() }
+        while !gate.isWaiting { await Task.yield() }
+        await poller.tick(force: true)
+        gate.open()
+        await inFlight.value
+        XCTAssertEqual(github.calls, ["viewer", "repos", "repos"])
+    }
+
+    func testNoAccessDropsRunningRunsAndStopsPolling() async {
+        github.repos = .success([.fixture("me/a", pushedAt: t0)])
+        github.runs["me/a"] = .success([run(1, "in_progress", nil)])
+        let poller = makePoller()
+        await poller.tick()
+        XCTAssertEqual(poller.state.running.map(\.id), [1])
+        github.runs["me/a"] = .failure(.noAccess)
+        at(10); await poller.tick()
+        XCTAssertEqual(poller.state.running, [])
+        github.resetCalls()
+        at(15); await poller.tick()
+        XCTAssertEqual(github.calls, [])
+        at(60); await poller.tick()
+        XCTAssertEqual(github.calls, ["repos"])
+    }
+}
+
+private final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var opened = false
+
+    var isWaiting: Bool { lock.withLock { continuation != nil } }
+
+    func wait() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if opened {
+                lock.unlock()
+                cont.resume()
+            } else {
+                continuation = cont
+                lock.unlock()
+            }
+        }
+    }
+
+    func open() {
+        lock.lock()
+        opened = true
+        let cont = continuation
+        continuation = nil
+        lock.unlock()
+        cont?.resume()
     }
 }
