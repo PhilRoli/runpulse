@@ -67,8 +67,12 @@ struct GhCLITokenSource: Sendable {
 final class CompositeTokenProvider: TokenProviding, @unchecked Sendable {
     private let gh: GhCLITokenSource
     private let keychain: KeychainTokenStoring
-    private let lock = NSLock()
+    /// Serialises resolution (which may spawn `gh`); never taken by `invalidate()`.
+    private let resolveLock = NSLock()
+    /// Guards `cached` and `generation`; only held briefly.
+    private let cacheLock = NSLock()
     private var cached: Token?
+    private var generation = 0
 
     init(gh: GhCLITokenSource = GhCLITokenSource(), keychain: KeychainTokenStoring) {
         self.gh = gh
@@ -76,9 +80,11 @@ final class CompositeTokenProvider: TokenProviding, @unchecked Sendable {
     }
 
     func token() throws -> Token {
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached { return cached }
+        if let hit = cacheLock.withLock({ cached }) { return hit }
+        resolveLock.lock()
+        defer { resolveLock.unlock() }
+        let start: (Token?, Int) = cacheLock.withLock { (cached, generation) }
+        if let hit = start.0 { return hit }
         let resolved: Token
         if let value = gh.token() {
             resolved = Token(value: value, source: .gh)
@@ -87,13 +93,14 @@ final class CompositeTokenProvider: TokenProviding, @unchecked Sendable {
         } else {
             throw TokenError.missing
         }
-        cached = resolved
+        cacheLock.withLock { if generation == start.1 { cached = resolved } }
         return resolved
     }
 
     func invalidate() {
-        lock.lock()
-        cached = nil
-        lock.unlock()
+        cacheLock.withLock {
+            cached = nil
+            generation += 1
+        }
     }
 }

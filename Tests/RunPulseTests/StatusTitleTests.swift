@@ -37,4 +37,10 @@ final class StatusTitleTests: XCTestCase {
         XCTAssertEqual(title(.stale, running: 1).text, "1*")
         XCTAssertEqual(title(.stale).text, "*")
     }
+
+    func testRateLimitedAndUnreachableAppendStar() {
+        XCTAssertEqual(title(.rateLimited(until: now), running: 2).text, "2*")
+        XCTAssertEqual(title(.unreachable).text, "*")
+        XCTAssertEqual(title(.ok, running: 2).text, "2")
+    }
 }

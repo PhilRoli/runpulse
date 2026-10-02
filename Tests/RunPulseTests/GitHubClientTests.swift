@@ -50,6 +50,8 @@ final class GitHubClientTests: XCTestCase {
                        "https://api.github.com/repos/me/app/actions/runs?actor=PhilRoli&per_page=20")
         XCTAssertEqual(GitHubClient.jobsURL(repo: "me/app", runID: 42).absoluteString,
                        "https://api.github.com/repos/me/app/actions/runs/42/jobs?filter=latest")
+        XCTAssertEqual(GitHubClient.runURL(repo: "me/app", id: 42).absoluteString,
+                       "https://api.github.com/repos/me/app/actions/runs/42")
     }
 
     func testHeadersAndViewer() async throws {
@@ -140,5 +142,28 @@ final class GitHubClientTests: XCTestCase {
         let step = try await client.failedStep(repo: "me/app", runID: 42, token: "t")
         XCTAssertEqual(step, FailedStep(job: "build", step: "Run tests"))
         XCTAssertEqual(transport.requests.first?.url, GitHubClient.jobsURL(repo: "me/app", runID: 42))
+    }
+
+    func testSingleRunUsesRunEndpointAndETag() async throws {
+        let body = """
+        {"id":42,"run_attempt":2,"name":"CI","event":"push","head_branch":"main","display_title":"t",
+         "status":"in_progress","conclusion":null,"created_at":"2026-10-02T14:41:10Z","run_started_at":null,
+         "updated_at":"2026-10-02T14:41:20Z","html_url":"https://github.com/me/app/actions/runs/42",
+         "repository":{"full_name":"me/app"}}
+        """
+        transport.responses = [ok(body, etag: "\"r1\""), status(304)]
+        let run = try await client.run(repo: "me/app", id: 42, token: "t")
+        XCTAssertEqual(run.id, 42)
+        XCTAssertEqual(transport.requests.first?.url, GitHubClient.runURL(repo: "me/app", id: 42))
+        let again = try await client.run(repo: "me/app", id: 42, token: "t")
+        XCTAssertEqual(again.id, 42)
+        XCTAssertEqual(transport.requests.last?.value(forHTTPHeaderField: "If-None-Match"), "\"r1\"")
+    }
+
+    func testJobsResponsesAreNotETagCached() async throws {
+        transport.responses = [ok(JSONFixtures.jobsFailed, etag: "\"j1\""), ok(JSONFixtures.jobsFailed, etag: "\"j1\"")]
+        _ = try await client.failedStep(repo: "me/app", runID: 42, token: "t")
+        _ = try await client.failedStep(repo: "me/app", runID: 42, token: "t")
+        XCTAssertNil(transport.requests.last?.value(forHTTPHeaderField: "If-None-Match"))
     }
 }

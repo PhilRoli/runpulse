@@ -75,4 +75,18 @@ final class NotificationManagerTests: XCTestCase {
         for _ in 0..<5 { await Task.yield() }
         XCTAssertEqual(scheduler.authRequests, 1)
     }
+
+    func testRequestIdentifierIsRunKey() {
+        let scheduler = FakeScheduler()
+        NotificationManager(scheduler: scheduler).post([FinishedEvent(run: run("success"))], details: [:])
+        XCTAssertEqual(scheduler.requests.first?.identifier, "9#1")
+    }
+
+    func testOnlyWebURLsAreOpenable() {
+        XCTAssertNotNil(NotificationPresenter.openableURL("https://github.com/a/b"))
+        XCTAssertNotNil(NotificationPresenter.openableURL("http://github.com/a/b"))
+        XCTAssertNil(NotificationPresenter.openableURL("file:///etc/passwd"))
+        XCTAssertNil(NotificationPresenter.openableURL("x-apple.systempreferences:foo"))
+        XCTAssertNil(NotificationPresenter.openableURL("not a url"))
+    }
 }

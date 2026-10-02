@@ -48,9 +48,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         reloadRepos()
     }
 
+    /// Reloading mid-click would swap the checkbox under the cursor, so only reload on real changes.
     func reloadRepos() {
-        repoRows = PreferencesLogic.repoRows(discovered: pollerState.discovered, muted: config.muted,
+        let rows = PreferencesLogic.repoRows(discovered: pollerState.discovered, muted: config.muted,
                                              noAccess: pollerState.noAccess)
+        guard rows != repoRows else { return }
+        repoRows = rows
         table.reloadData()
     }
 
@@ -71,7 +74,7 @@ extension PreferencesWindowController: NSTableViewDataSource, NSTableViewDelegat
             let box = NSButton(checkboxWithTitle: "", target: self, action: #selector(repoToggled(_:)))
             box.state = repo.enabled ? .on : .off
             box.isEnabled = !repo.noAccess
-            box.tag = row
+            box.identifier = NSUserInterfaceItemIdentifier(repo.name)
             return box
         }
         let label = NSTextField(labelWithString: repo.noAccess ? "\(repo.name)  no access" : repo.name)

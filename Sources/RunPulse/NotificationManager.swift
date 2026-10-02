@@ -24,16 +24,18 @@ final class NotificationManager {
     }
 
     func post(_ events: [FinishedEvent], details: [String: FailedStep]) {
-        let messages = events.compactMap { Self.message(for: $0.run, detail: details[$0.run.key]) }
+        let messages = events.compactMap { event in
+            Self.message(for: event.run, detail: details[event.run.key]).map { (event.run.key, $0) }
+        }
         guard !messages.isEmpty else { return }
         requestAuthIfNeeded()
-        for message in messages {
+        for (key, message) in messages {
             let content = UNMutableNotificationContent()
             content.title = message.title
             content.body = message.body
             content.sound = .default
             content.userInfo = ["url": message.url.absoluteString]
-            scheduler.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil),
+            scheduler.add(UNNotificationRequest(identifier: key, content: content, trigger: nil),
                           withCompletionHandler: nil)
         }
     }
@@ -77,6 +79,12 @@ final class NotificationManager {
 
 /// Shows banners while RunPulse is frontmost and opens the run when a notification is clicked.
 final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    static func openableURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http" else { return nil }
+        return url
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler:
                                     @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -85,7 +93,8 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let raw = response.notification.request.content.userInfo["url"] as? String, let url = URL(string: raw) {
+        if let raw = response.notification.request.content.userInfo["url"] as? String,
+           let url = Self.openableURL(raw) {
             NSWorkspace.shared.open(url)
         }
         completionHandler()

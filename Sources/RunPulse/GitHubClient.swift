@@ -42,6 +42,7 @@ protocol GitHubFetching: Sendable {
     func viewer(token: String) async throws -> String
     func recentRepos(token: String) async throws -> [Repo]
     func runs(repo: String, actor: String, token: String) async throws -> [Run]
+    func run(repo: String, id: Int, token: String) async throws -> Run
     func failedStep(repo: String, runID: Int, token: String) async throws -> FailedStep?
 }
 
@@ -73,6 +74,10 @@ final class GitHubClient: GitHubFetching {
         url("/repos/\(repo)/actions/runs", ["actor": actor, "per_page": "20"])
     }
 
+    static func runURL(repo: String, id: Int) -> URL {
+        url("/repos/\(repo)/actions/runs/\(id)")
+    }
+
     static func jobsURL(repo: String, runID: Int) -> URL {
         url("/repos/\(repo)/actions/runs/\(runID)/jobs", ["filter": "latest"])
     }
@@ -89,8 +94,12 @@ final class GitHubClient: GitHubFetching {
         try decode(RunsPage.self, try await get(Self.runsURL(repo: repo, actor: actor), token: token)).workflowRuns
     }
 
+    func run(repo: String, id: Int, token: String) async throws -> Run {
+        try decode(Run.self, try await get(Self.runURL(repo: repo, id: id), token: token))
+    }
+
     func failedStep(repo: String, runID: Int, token: String) async throws -> FailedStep? {
-        FailureDetail.parse(try await get(Self.jobsURL(repo: repo, runID: runID), token: token))
+        FailureDetail.parse(try await get(Self.jobsURL(repo: repo, runID: runID), token: token, cacheable: false))
     }
 
     private static func url(_ path: String, _ query: [String: String] = [:]) -> URL {
@@ -104,20 +113,22 @@ final class GitHubClient: GitHubFetching {
         return components.url!
     }
 
-    private func get(_ url: URL, token: String) async throws -> Data {
+    private func get(_ url: URL, token: String, cacheable: Bool = true) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         let key = "\(token)\n\(url.absoluteString)"
-        let cached = await cache.entry(key)
+        let cached = cacheable ? await cache.entry(key) : nil
         if let cached { request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
 
         let response = try await send(request)
         switch response.status {
         case 200..<300:
-            if let etag = response.headers["etag"] { await cache.store(key, etag: etag, body: response.data) }
+            if cacheable, let etag = response.headers["etag"] {
+                await cache.store(key, etag: etag, body: response.data)
+            }
             return response.data
         case 304:
             guard let cached else { throw GitHubError.http(304) }

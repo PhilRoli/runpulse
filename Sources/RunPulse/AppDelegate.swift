@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         config = store.load()
 
         statusBar.rows = { [unowned self] in MenuModel.rows(state: self.poller.state) }
-        statusBar.onRefresh = { [unowned self] in self.poller.refreshNow() }
+        statusBar.onRefresh = { [unowned self] in self.poller.refreshNow(clearingCooldowns: true) }
         statusBar.onPreferences = { [unowned self] in self.showPreferences() }
         statusBar.onMenuOpened = { [unowned self] in
             self.failureUnacknowledged = false

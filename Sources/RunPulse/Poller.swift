@@ -33,6 +33,8 @@ final class Poller {
     private var tracker: RunTracker
     private var repos: [Repo] = []
     private var login: String?
+    /// Survives `tokenChanged()` so an account switch can be told apart from a re-login.
+    private var knownLogin: String?
     private var lastRepoFetch: Date?
     private var lastRunFetch: [String: Date] = [:]
     private var cooldown: [String: Date] = [:]
@@ -67,7 +69,8 @@ final class Poller {
         }
     }
 
-    func refreshNow() {
+    func refreshNow(clearingCooldowns: Bool = false) {
+        if clearingCooldowns { clearRepoCooldowns() }
         Task { await tick(force: true) }
     }
 
@@ -85,7 +88,14 @@ final class Poller {
         login = nil
         state.account = nil
         lastAuthAttempt = nil
+        pausedUntil = nil
+        clearRepoCooldowns()
         refreshNow()
+    }
+
+    private func clearRepoCooldowns() {
+        cooldown = [:]
+        state.noAccess = []
     }
 
     /// Runs that finished while asleep only notify if they ended in the last 10 minutes.
@@ -178,6 +188,8 @@ final class Poller {
         if login == nil {
             let fetched = try await client.viewer(token: token)
             try ensureCurrent()
+            if let known = knownLogin, known != fetched { resetForNewAccount() }
+            knownLogin = fetched
             login = fetched
             state.account = fetched
         }
@@ -191,20 +203,7 @@ final class Poller {
         for repo in activeRepos(at: at) {
             let interval = tracker.hasActiveRuns(repo: repo) ? Self.activeInterval : Self.idleInterval
             guard force || isDue(lastRunFetch[repo], interval, at) else { continue }
-            do {
-                let runs = try await client.runs(repo: repo, actor: login, token: token)
-                try ensureCurrent()
-                lastRunFetch[repo] = at
-                state.noAccess.remove(repo)
-                try await report(tracker.merge(repo: repo, runs: runs), repo: repo, token: token)
-            } catch GitHubError.noAccess {
-                cooldown[repo] = at.addingTimeInterval(Self.noAccessCooldown)
-                state.noAccess.insert(repo)
-                lastRunFetch[repo] = at
-                tracker.remove(repo: repo)
-            } catch GitHubError.http(_), GitHubError.decoding {
-                lastRunFetch[repo] = at // one broken repo must not stale the rest
-            }
+            try await pollRepo(repo, login: login, token: token, at: at)
         }
     }
 
@@ -278,6 +277,53 @@ final class Poller {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 continuation.resume(returning: try? provider.token())
+            }
+        }
+    }
+}
+
+// MARK: Per-repo polling
+
+extension Poller {
+    private func resetForNewAccount() {
+        tracker = RunTracker(baselineAt: now())
+        lastRunFetch = [:]
+        repos = []
+        lastRepoFetch = nil
+        state.failures = [:]
+    }
+
+    private func isMuted(_ repo: String) -> Bool { Set(config.muted).contains(repo) }
+
+    private func pollRepo(_ repo: String, login: String, token: String, at: Date) async throws {
+        do {
+            let runs = try await client.runs(repo: repo, actor: login, token: token)
+            try ensureCurrent()
+            guard !isMuted(repo) else { return } // muted while the request was in flight
+            lastRunFetch[repo] = at
+            state.noAccess.remove(repo)
+            try await report(tracker.merge(repo: repo, runs: runs, now: at), repo: repo, token: token)
+            try await refetchUnfinished(repo, missingFrom: runs, token: token, at: at)
+        } catch GitHubError.noAccess {
+            cooldown[repo] = at.addingTimeInterval(Self.noAccessCooldown)
+            state.noAccess.insert(repo)
+            lastRunFetch[repo] = at
+            tracker.remove(repo: repo)
+        } catch GitHubError.http(_), GitHubError.decoding {
+            lastRunFetch[repo] = at // one broken repo must not stale the rest
+        }
+    }
+
+    /// In-flight runs can fall off the newest page; fetch them one by one so they still finish and notify.
+    private func refetchUnfinished(_ repo: String, missingFrom page: [Run], token: String, at: Date) async throws {
+        for missing in tracker.unfinishedRuns(missingFrom: page, repo: repo) {
+            do {
+                let fresh = try await client.run(repo: repo, id: missing.id, token: token)
+                try ensureCurrent()
+                guard !isMuted(repo) else { return }
+                try await report(tracker.mergeSingle(fresh, now: at), repo: repo, token: token)
+            } catch GitHubError.noAccess, GitHubError.http(_), GitHubError.decoding {
+                tracker.remove(runID: missing.id) // gone or unreadable: don't let it linger forever
             }
         }
     }

@@ -3,9 +3,11 @@ import XCTest
 
 private final class FakeRunner: ProcessRunning, @unchecked Sendable {
     var results: [String: (status: Int32, output: String)] = [:]
+    var delay: TimeInterval = 0
     private(set) var calls: [String] = []
 
     func run(_ executable: String, _ arguments: [String]) -> (status: Int32, output: String)? {
+        if delay > 0 { Thread.sleep(forTimeInterval: delay) }
         calls.append("\(executable) \(arguments.joined(separator: " "))")
         return results[executable]
     }
@@ -84,5 +86,22 @@ final class TokenProviderTests: XCTestCase {
         let start = Date()
         XCTAssertNil(SystemProcessRunner(timeout: 0.5).run("/bin/sleep", ["5"]))
         XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+    }
+
+    func testInvalidateDoesNotBlockOnInFlightResolve() async {
+        let runner = FakeRunner()
+        runner.delay = 1
+        runner.results[brew] = (0, "gho_slow")
+        let tokens = provider(runner)
+        let resolving = Task.detached { try? tokens.token() }
+        while runner.calls.isEmpty { try? await Task.sleep(nanoseconds: 10_000_000) }
+        let start = Date()
+        tokens.invalidate()
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.3)
+        _ = await resolving.value
+        // The resolve that was in flight during invalidate() must not repopulate the cache.
+        runner.delay = 0
+        _ = try? tokens.token()
+        XCTAssertEqual(runner.calls.count, 2)
     }
 }
