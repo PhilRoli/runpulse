@@ -1,12 +1,6 @@
 import AppKit
+import MenuBarKit
 import UserNotifications
-
-protocol NotificationScheduler {
-    func add(_ request: UNNotificationRequest, withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?)
-    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
-}
-
-extension UNUserNotificationCenter: NotificationScheduler {}
 
 struct NotificationMessage: Equatable {
     var title: String
@@ -78,25 +72,16 @@ final class NotificationManager {
 }
 
 /// Shows banners while RunPulse is frontmost and opens the run when a notification is clicked.
-final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+final class NotificationPresenter: BannerNotificationPresenter {
     static func openableURL(_ raw: String) -> URL? {
         guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(),
               scheme == "https" || scheme == "http" else { return nil }
         return url
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler:
-                                    @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
-    }
-
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let raw = response.notification.request.content.userInfo["url"] as? String,
-           let url = Self.openableURL(raw) {
+    override func handleClick(userInfo: [AnyHashable: Any]) {
+        if let raw = userInfo["url"] as? String, let url = Self.openableURL(raw) {
             NSWorkspace.shared.open(url)
         }
-        completionHandler()
     }
 }

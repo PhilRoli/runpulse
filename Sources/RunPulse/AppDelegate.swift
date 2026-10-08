@@ -1,5 +1,6 @@
 import AppKit
 import UserNotifications
+import MenuBarKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -18,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var prefs: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.make()
+        NSApp.mainMenu = MainMenu.make(appName: "RunPulse")
         UNUserNotificationCenter.current().delegate = presenter
         notifications.requestAuthorization()
         config = store.load()
