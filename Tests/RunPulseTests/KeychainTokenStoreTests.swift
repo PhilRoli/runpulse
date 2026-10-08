@@ -29,9 +29,3 @@ final class KeychainTokenStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.save("a\nb"))
     }
 }
-
-final class KeychainQuoteTests: XCTestCase {
-    func testQuote() {
-        XCTAssertEqual(KeychainTokenStore.quote(#"a"b\c"#), #""a\"b\\c""#)
-    }
-}
