@@ -29,10 +29,10 @@ RunPulse uses the GitHub CLI's login: install [`gh`](https://cli.github.com) and
 
 ## Development
 
-- Build + install locally: `./rebuild.sh` (installs to /Applications, ad-hoc signed).
+- Build + install locally: `./rebuild.sh` (installs to /Applications, ad-hoc signed; needs [menubar-kit](https://github.com/PhilRoli/menubar-kit) cloned next to this repo, or `MENUBAR_KIT` set).
 - Tests: `swift test`. Lint: `swiftlint --strict`.
 - Release: push a tag `vX.Y.Z`. The Release workflow builds a universal app, publishes `RunPulse-X.Y.Z.app.zip` and updates `Casks/runpulse.rb` in `PhilRoli/homebrew-tap` (needs the `HOMEBREW_TAP_TOKEN` repo secret).
-- Regenerate the icon: `scripts/make-icon.sh`.
+- Regenerate the icon: `../menubar-kit/scripts/make-icon.sh 🚦`.
 
 ## License
 
