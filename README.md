@@ -1,3 +1,5 @@
+<p align="center"><img src="Packaging/icon.png" width="128" alt="RunPulse icon"></p>
+
 # RunPulse
 
 Menu bar app that follows the GitHub Actions runs **you** trigger — pushes, tags, manual dispatches — across all your repos. Shows how many are running, notifies when each finishes (naming the failing job › step), and goes quiet again.
