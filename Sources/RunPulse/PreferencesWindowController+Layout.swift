@@ -1,8 +1,9 @@
 import AppKit
+import MenuBarKit
 
 extension PreferencesWindowController {
     func buildLayout() {
-        guard let window, let content = window.contentView else { return }
+        guard let window else { return }
         let stack = NSStackView(views: [
             sectionLabel("Account"), accountGrid(), separator(),
             sectionLabel("Repos"), reposView(), separator(),
@@ -12,15 +13,7 @@ extension PreferencesWindowController {
         stack.alignment = .leading
         stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: content.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor)
-        ])
-        window.setContentSize(stack.fittingSize)
+        PreferencesLayout.pinAndFit(stack, in: window)
     }
 
     private func accountGrid() -> NSView {
@@ -73,22 +66,14 @@ extension PreferencesWindowController {
     }
 
     private func sectionLabel(_ text: String) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
-        return label
+        PreferencesLayout.sectionLabel(text)
     }
 
     private func label(_ text: String) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 13)
-        return label
+        PreferencesLayout.label(text)
     }
 
     private func separator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.widthAnchor.constraint(equalToConstant: 380).isActive = true
-        return box
+        PreferencesLayout.separator(width: 380)
     }
 }

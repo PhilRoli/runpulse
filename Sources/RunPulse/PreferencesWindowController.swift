@@ -1,4 +1,5 @@
 import AppKit
+import MenuBarKit
 
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {

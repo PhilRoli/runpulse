@@ -1,5 +1,6 @@
 import AppKit
 import UserNotifications
+import MenuBarKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -18,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var prefs: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.make()
+        NSApp.mainMenu = MainMenu.make(appName: "RunPulse")
         UNUserNotificationCenter.current().delegate = presenter
         notifications.requestAuthorization()
         config = store.load()
@@ -35,11 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.prefs?.update(state: state)
         }
         poller.onFinished = { [unowned self] events, details in self.handle(events, details) }
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.poller.didWake() }
-        }
+        wakeObserver = observeWake { [weak self] in self?.poller.didWake() }
 
         poller.start()
         render()

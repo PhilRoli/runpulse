@@ -1,4 +1,4 @@
-# RunPulse
+# <img src="Packaging/icon.png" width="48" height="48" align="absmiddle" alt="RunPulse icon"> RunPulse
 
 Menu bar app that follows the GitHub Actions runs **you** trigger — pushes, tags, manual dispatches — across all your repos. Shows how many are running, notifies when each finishes (naming the failing job › step), and goes quiet again.
 
@@ -29,10 +29,10 @@ RunPulse uses the GitHub CLI's login: install [`gh`](https://cli.github.com) and
 
 ## Development
 
-- Build + install locally: `./rebuild.sh` (installs to /Applications, ad-hoc signed).
+- Build + install locally: `./rebuild.sh` (installs to /Applications, ad-hoc signed; needs [menubar-kit](https://github.com/PhilRoli/menubar-kit) cloned next to this repo, or `MENUBAR_KIT` set).
 - Tests: `swift test`. Lint: `swiftlint --strict`.
 - Release: push a tag `vX.Y.Z`. The Release workflow builds a universal app, publishes `RunPulse-X.Y.Z.app.zip` and updates `Casks/runpulse.rb` in `PhilRoli/homebrew-tap` (needs the `HOMEBREW_TAP_TOKEN` repo secret).
-- Regenerate the icon: `scripts/make-icon.sh`.
+- Regenerate the icon: `../menubar-kit/scripts/make-icon.sh 🚦`.
 
 ## License
 
