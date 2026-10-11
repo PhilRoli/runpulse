@@ -7,7 +7,8 @@ extension PreferencesWindowController {
         let stack = NSStackView(views: [
             sectionLabel("Account"), accountGrid(), separator(),
             sectionLabel("Repos"), reposView(), separator(),
-            sectionLabel("General"), notifyCheck, loginCheck
+            sectionLabel("General"), notifyCheck, loginCheck,
+            PreferencesLayout.versionLabel()
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
