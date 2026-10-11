@@ -36,11 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.prefs?.update(state: state)
         }
         poller.onFinished = { [unowned self] events, details in self.handle(events, details) }
-        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.poller.didWake() }
-        }
+        wakeObserver = observeWake { [weak self] in self?.poller.didWake() }
 
         poller.start()
         render()
